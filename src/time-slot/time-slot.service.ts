@@ -14,6 +14,7 @@ export class TimeSlotService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
   ) {}
+  
 
   private isValidTimeRange(startTime: string, endTime: string): boolean {
     try {
