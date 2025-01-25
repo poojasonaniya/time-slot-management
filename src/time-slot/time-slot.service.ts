@@ -5,6 +5,7 @@ import { TimeSlot } from './time-slot.entity';
 import { User } from 'src/entities/user.entity';
 import { CreateTimeSlotDto } from './dto/create-time-slot.dto';
 import { updateTimeSlotDto } from './dto/update-time-slot.dto';
+import { ERROR_MSG } from 'src/constants';
 
 @Injectable()
 export class TimeSlotService {
@@ -14,7 +15,6 @@ export class TimeSlotService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
   ) {}
-  
 
   private isValidTimeRange(startTime: string, endTime: string): boolean {
     try {
@@ -43,7 +43,7 @@ export class TimeSlotService {
     }
   }
 
-  private validateBookingDate(date: any) {
+  private validatDate(date: any) {
     // Check if the date is in the past
     const bookingDate = new Date(date);
     bookingDate.setHours(0, 0, 0, 0);
@@ -85,109 +85,116 @@ export class TimeSlotService {
   }
 
   async create(createTimeSlotDto: CreateTimeSlotDto): Promise<TimeSlot> {
-    const { date, startTime, endTime, userId, createdBy } = createTimeSlotDto;
+    try {
+      const { date, startTime, endTime, userId, createdBy } = createTimeSlotDto;
 
-    // Validate time range (10 AM - 6 PM)
-    if (!this.isValidTimeRange(startTime, endTime)) {
-      throw new BadRequestException('Invalid Time slot');
+      // Validate time range (10 AM - 6 PM)
+      if (!this.isValidTimeRange(startTime, endTime)) {
+        throw new BadRequestException('Invalid Time slot');
+      }
+
+      // Check if user exists
+      const user = await this.userRepository.findOne({ where: { id: userId } });
+
+      if (!user) {
+        throw new BadRequestException(ERROR_MSG.USER_NOT_FOUND);
+      }
+
+      if (!this.validatDate(date)) {
+        throw new BadRequestException(ERROR_MSG.PAST_DATE_BOOKING_ERROR);
+      }
+
+      const overlapping = await this.getOverlappingTimeSlot(
+        date,
+        userId,
+        startTime,
+        endTime,
+      );
+
+      if (overlapping.length > 0) {
+        throw new BadRequestException(ERROR_MSG.TIME_SLOT_OVERLAP_ERROR);
+      }
+
+      const timeSlot = this.timeSlotRepository.create({
+        date,
+        startTime,
+        endTime,
+        userId,
+        createdBy,
+        isBlocked: true,
+      });
+
+      return this.timeSlotRepository.save(timeSlot);
+    } catch (error) {
+      console.log('error in create slot', error);
+      throw error;
     }
-
-    // Check if user exists
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-
-    if (!this.validateBookingDate(date)) {
-      throw new BadRequestException('Cannot book time slots for past dates');
-    }
-
-    const overlapping = await this.getOverlappingTimeSlot(
-      date,
-      userId,
-      startTime,
-      endTime,
-    );
-
-    console.log(`overlapping------------>`, overlapping);
-
-    if (overlapping.length > 0) {
-      throw new BadRequestException('Time slot overlaps with existing slots');
-    }
-
-    const timeSlot = this.timeSlotRepository.create({
-      date,
-      startTime,
-      endTime,
-      userId,
-      createdBy,
-      isBlocked: true,
-    });
-
-    return this.timeSlotRepository.save(timeSlot);
   }
 
   async updateTimeSlot(id: number, body: updateTimeSlotDto): Promise<any> {
-    const { date, startTime, endTime, createdBy } = body;
+    try {
+      const { date, startTime, endTime, createdBy } = body;
 
-    // Validate time range (10 AM - 6 PM)
-    if (!this.isValidTimeRange(startTime, endTime)) {
-      throw new BadRequestException('Invalid Time slot');
-    }
+      // Validate time range (10 AM - 6 PM)
+      if (!this.isValidTimeRange(startTime, endTime)) {
+        throw new BadRequestException(ERROR_MSG.INVALID_TIME_SLOT_ERROR);
+      }
 
-    if (!this.validateBookingDate(date)) {
-      throw new BadRequestException('Cannot book time slots for past dates');
-    }
+      if (!this.validatDate(date)) {
+        throw new BadRequestException(ERROR_MSG.PAST_DATE_BOOKING_ERROR);
+      }
 
-    const timeSlot = await this.timeSlotRepository.findOne({
-      where: { id: id },
-    });
+      const timeSlot = await this.timeSlotRepository.findOne({
+        where: { id: id },
+      });
 
-    if (!timeSlot) {
-      throw new BadRequestException('timeslot with given id does not exist');
-    }
+      if (!timeSlot) {
+        throw new BadRequestException(ERROR_MSG.TIME_SLOT_NOT_FOUND_ERROR);
+      }
 
-    if (createdBy != timeSlot?.createdBy && createdBy != timeSlot?.userId) {
-      throw new BadRequestException(
-        'you do not have permission to update this slot',
+      if (createdBy != timeSlot?.createdBy && createdBy != timeSlot?.userId) {
+        throw new BadRequestException(ERROR_MSG.PERMISSION_DENIED_UPDATE_SLOT);
+      }
+
+      const overlapping = await this.getOverlappingTimeSlot(
+        date,
+        timeSlot.userId,
+        startTime,
+        endTime,
       );
+
+      if (overlapping.length > 0) {
+        throw new BadRequestException(ERROR_MSG.TIME_SLOT_OVERLAP_ERROR);
+      }
+
+      return await this.timeSlotRepository.update(id, body);
+    } catch (error) {
+      console.log('error in update slot', error);
+      throw error;
     }
-
-    const overlapping = await this.getOverlappingTimeSlot(
-      date,
-      timeSlot.userId,
-      startTime,
-      endTime,
-    );
-
-    console.log(`overlapping------------>`, overlapping);
-
-    if (overlapping.length > 0) {
-      throw new BadRequestException('Time slot overlaps with existing slots');
-    }
-
-    return await this.timeSlotRepository.update(id, body);
   }
 
   async deleteTimeSlot(id: number, deletedBy: number): Promise<void> {
-    const timeSlot = await this.timeSlotRepository.findOne({
-      where: { id: id },
-    });
+    try {
+      const timeSlot = await this.timeSlotRepository.findOne({
+        where: { id: id },
+      });
 
-    if (!timeSlot) {
-      throw new BadRequestException('timeslot with given id does not exist');
-    }
+      if (!timeSlot) {
+        throw new BadRequestException(ERROR_MSG.TIME_SLOT_NOT_FOUND_ERROR);
+      }
 
-    if (deletedBy != timeSlot?.createdBy && deletedBy != timeSlot?.userId) {
-      throw new BadRequestException(
-        'you do not have permission to delete this slot',
-      );
-    }
-    const result = await this.timeSlotRepository.delete({ id });
+      if (deletedBy != timeSlot?.createdBy && deletedBy != timeSlot?.userId) {
+        throw new BadRequestException(ERROR_MSG.PERMISSION_DENIED_UPDATE_SLOT);
+      }
+      const result = await this.timeSlotRepository.delete({ id });
 
-    if (result.affected === 0) {
-      throw new BadRequestException('Time slot not found or unauthorized');
+      if (result.affected === 0) {
+        throw new BadRequestException(ERROR_MSG.TIME_SLOT_NOT_FOUND_ERROR);
+      }
+    } catch (error) {
+      console.log('error in deleteTimeSlot', error);
+      throw error;
     }
   }
 
@@ -222,37 +229,42 @@ export class TimeSlotService {
   }
 
   async getAvailableSlots(date: any, userId: number): Promise<any[]> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    try {
+      const user = await this.userRepository.findOne({ where: { id: userId } });
 
-    console.log(`user-------------->`, user);
+      if (!user) {
+        throw new BadRequestException(ERROR_MSG.USER_NOT_FOUND);
+      }
 
-    if (!user) {
-      throw new BadRequestException('User not found');
+      if (!this.validatDate(date)) {
+        throw new BadRequestException(ERROR_MSG.INVALID_DATE_ERROR);
+      }
+
+      const allSlots = this.generateTimeSlots(date, userId);
+
+      // Get blocked slots from database
+      const blockedSlots = await this.timeSlotRepository.find({
+        where: {
+          date,
+          userId,
+          isBlocked: true,
+        },
+      });
+
+      // Filter out blocked slots
+      return allSlots.filter(
+        (slot: any) =>
+          !blockedSlots.some(
+            (blockedSlot) =>
+              (blockedSlot.startTime <= slot.startTime &&
+                blockedSlot.endTime > slot.startTime) ||
+              (blockedSlot.startTime < slot.endTime &&
+                blockedSlot.endTime >= slot.endTime),
+          ),
+      );
+    } catch (error) {
+      console.log('error in getAvailableSlots', error);
+      throw error;
     }
-
-    const allSlots = this.generateTimeSlots(date, userId);
-
-    // Get blocked slots from database
-    const blockedSlots = await this.timeSlotRepository.find({
-      where: {
-        date,
-        userId,
-        isBlocked: true,
-      },
-    });
-
-    console.log(`blockedSlots---------->`, blockedSlots);
-
-    // Filter out blocked slots
-    return allSlots.filter(
-      (slot: any) =>
-        !blockedSlots.some(
-          (blockedSlot) =>
-            (blockedSlot.startTime <= slot.startTime &&
-              blockedSlot.endTime > slot.startTime) ||
-            (blockedSlot.startTime < slot.endTime &&
-              blockedSlot.endTime >= slot.endTime),
-        ),
-    );
   }
 }

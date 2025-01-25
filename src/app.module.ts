@@ -1,20 +1,20 @@
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { User } from './entities/user.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
+import { User } from './entities/user.entity';
 import { TimeSlot } from './time-slot/time-slot.entity';
 import { TimeSlotModule } from './time-slot/time-slot.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot(),
     TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: 'localhost',
-      port: 5432,
-      username: 'postgres',
-      password: 'Pooja@2024',
-      database: 'timeslot_db',
+      type: process.env.DB_TYPE as any,
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT ?? '5432', 10),
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_DATABASE,
       entities: [User, TimeSlot],
       synchronize: true,
       logging: true,
@@ -22,7 +22,7 @@ import { TimeSlotModule } from './time-slot/time-slot.module';
     TypeOrmModule.forFeature([User, TimeSlot]),
     TimeSlotModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}
